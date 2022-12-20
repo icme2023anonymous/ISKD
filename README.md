@@ -21,7 +21,7 @@ We first perform semantic-level optimization of the source model output informat
 - Numpy 1.22.0
 
 ### Prepare datasets and pre-trained models
-Download **Sketchy Extended** and **TU-Berlin** dataset by following [SEM-PCYC](https://github.com/AnjanDutta/sem-pcyc).
+Download the dataset and write the correspinding text files via [Generate_list](https://github.com/tim-learn/Generate_list) (check the file path in the 'data/office-home/**_list.txt' folder).
 
 ### Training & Testing
 ##### OFFICE-HOME 
