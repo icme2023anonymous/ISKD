@@ -1,5 +1,5 @@
 # Information Selection-based Domain Adaptation from Black-box Predictors
-This repository is the anonymous Pytorch implementation of the ISKD method. More analysis can be refer to ()
+This repository is the anonymous Pytorch implementation of the ISKD method. More analysis can be refer to (https://github.com/icme2023anonymous/ISKD/blob/main/supp.pdf)
 ![Alternative text](./image/framework.png)
 ## Main Idea
 Unsupervised domain adaptation aims to address the problem of under labeling by performing knowledge transfer between labeled source domains and unlabeled target domains.
