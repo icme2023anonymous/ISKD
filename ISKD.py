@@ -127,7 +127,91 @@ def cal_acc(loader, netF, netB, netC, flag=False):
         return aacc, acc, mean_ent
     else:
         return accuracy*100, mean_ent
+def evaluation_tea(loader, netF, netB, netC, args, cnt):
+    start_test = True
+    iter_test = iter(loader)
+    for _ in range(len(loader)):
+        data = iter_test.next()
+        inputs = data[0]
+        labels = data[1].cuda()
+        inputs = inputs.cuda()
+        if netB == None:
+            feas = netF(inputs)
+        else:
+            feas = netB(netF(inputs))
+        outputs = netC(feas)
+        if start_test:
+            all_fea = feas.float()
+            all_output = outputs.float()
+            all_label = labels.float()
+            start_test = False
+        else:
+            all_fea = torch.cat((all_fea, feas.float()), 0)
+            all_output = torch.cat((all_output, outputs.float()), 0)
+            all_label = torch.cat((all_label, labels.float()), 0)
+            
+    _, predict = torch.max(all_output, 1)
+    accuracy_return = torch.sum(torch.squeeze(predict).float() == all_label).item() / float(all_label.size()[0])
+    mean_ent = torch.mean(loss.Entropy(nn.Softmax(dim=1)(all_output))).data.item()
 
+    if args.dset=='VISDA-C':
+        matrix = confusion_matrix(all_label.cpu().numpy(), torch.squeeze(predict).float().cpu().numpy())
+        acc_return = matrix.diagonal()/matrix.sum(axis=1) * 100
+        aacc = acc_return.mean()
+        aa = [str(np.round(i, 2)) for i in acc_return]
+        acc_return = ' '.join(aa)
+
+    all_fea = all_output
+    all_output = nn.Softmax(dim=1)(all_output)
+    all_fea_orig = all_fea
+    ent = torch.sum(-all_output * torch.log(all_output + 1e-6), dim=1)
+    unknown_weight = 1 - ent / np.log(args.class_num)
+
+    accuracy = torch.sum(torch.squeeze(predict).float() == all_label).item() / float(all_label.size()[0])
+    all_fea = (all_fea.t() / torch.norm(all_fea, p=2, dim=1)).t()
+
+    all_fea = all_fea.float()
+    K = all_output.shape[1]
+    aff = all_output.float()
+    ############################## Gaussian Mixture Modeling #############################
+
+    uniform = torch.ones(len(all_fea),args.class_num)/args.class_num
+    uniform = uniform.cuda()
+
+    pi = all_output.sum(dim=0)
+    mu = torch.matmul(all_output.t(), (all_fea))
+    mu = mu / pi.unsqueeze(dim=-1).expand_as(mu)
+
+    zz, gamma = gmm((all_fea), pi, mu, uniform)
+    pred_label = gamma.argmax(dim=1)
+    
+    for round in range(1):
+        pi = gamma.sum(dim=0)
+        mu = torch.matmul(gamma.t(), (all_fea))
+        mu = mu / pi.unsqueeze(dim=-1).expand_as(mu)
+
+        zz, gamma = gmm((all_fea), pi, mu, gamma)
+        pred_label = gamma.argmax(axis=1)
+            
+    aff = gamma
+    
+    acc = (pred_label==all_label).float().mean()
+    log_str = 'Model Prediction : Accuracy = {:.2f}%'.format(accuracy * 100) + '\n'
+    log_str += 'GMM pred_label accuracy  : {:.2f}%\n'.format(acc*100)
+    if args.dset=='VISDA-C':
+        log_str += 'VISDA-C classwise accuracy : {:.2f}%\n{}'.format(aacc, acc_return) + '\n'
+        log_str += 'pred_label accuracy  : {:.2f}%\n'.format(acc*100)
+    print(log_str)
+    nor_mu = F.normalize(mu,p=2,dim=1)
+    similarity_matrix = torch.matmul(nor_mu, nor_mu.t())
+    rec_weight = torch.matmul(gamma, similarity_matrix)
+    weight1 = 1+torch.sum(torch.log(all_output)*all_output,dim=1)/torch.log(torch.tensor([args.class_num]).cuda())
+    print(weight1)
+    cs =weight1.detach()
+    #rec_weight = torch.clamp(rec_weight,min=0)
+    if args.dset=='VISDA-C':
+        return aff, aacc/100,rec_weight,cs
+    return aff, max(accuracy,acc),rec_weight,cs
 def evaluation(loader, netF, netB, netC, args, cnt):
     start_test = True
     iter_test = iter(loader)
@@ -378,7 +462,7 @@ def copy_target_simp(args):
     netC.eval()
     with torch.no_grad():
         cnt =0
-        soft_pseudo_label, accuracy,rec_weight,cs = evaluation(
+        soft_pseudo_label, accuracy,rec_weight,cs = evaluation_tea(
             dset_loaders["target_te"], netF, None, netC, args, cnt
         )
         if args.dset == 'office':
